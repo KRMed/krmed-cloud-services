@@ -2,8 +2,8 @@
 
 ![krmed-cloud](docs/images/krmed-cloud.png)
 
-[![K3S](https://img.shields.io/badge/K3S-1.29-FFC61C?style=flat-square&logo=k3s&logoColor=white)](https://k3s.io)
-[![ArgoCD](https://img.shields.io/badge/ArgoCD-v2.9.3-EF7B4D?style=flat-square&logo=argo&logoColor=white)](https://argoproj.github.io/cd)
+[![K3S](https://img.shields.io/badge/K3S-1.34.3-FFC61C?style=flat-square&logo=k3s&logoColor=white)](https://k3s.io)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-v3.3-EF7B4D?style=flat-square&logo=argo&logoColor=white)](https://argoproj.github.io/cd)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Tunnel-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?style=flat-square&logo=prometheus&logoColor=white)](https://prometheus.io)
 [![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
@@ -54,7 +54,7 @@ Real workloads, real users, zero cloud dependency. A self-hosted K3S cluster on 
 
 Every PR runs two parallel jobs before it can merge.
 
-**Manifests gate** - builds the full production manifest with Kustomize, validates YAML syntax, renders both Helm charts inline (ingress-nginx and kube-prometheus-stack), then schema-validates everything against the Kubernetes 1.29 spec with `kubeconform`.
+**Manifests gate** - builds the full production manifest with Kustomize, validates YAML syntax, renders both Helm charts inline (ingress-nginx and kube-prometheus-stack), then schema-validates everything against the Kubernetes 1.34 spec with `kubeconform`.
 
 **Security gate** - gitleaks scans the diff for hardcoded secrets, Trivy scans manifests for HIGH/CRITICAL misconfigurations, and Trivy pulls and scans every container image on `linux/arm64` with registry auth.
 
