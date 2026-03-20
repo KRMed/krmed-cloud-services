@@ -83,7 +83,7 @@ Both must pass. No exceptions.
 | Tunneling | Cloudflare Tunnel |
 | Registry | GitHub Container Registry (ghcr.io) |
 | Security scanning | Trivy + gitleaks |
-| Dependency updates | Dependabot (weekly) |
+| Dependency updates | Dependabot (bi-monthly) |
 
 ---
 
