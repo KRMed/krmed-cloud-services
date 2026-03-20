@@ -89,5 +89,5 @@ Both must pass. No exceptions.
 
 ## Related
 
-- [krmed-portfolio](https://github.com/KRMed/krmed-portfolio) - the portfolio site deployed here
+- [krmed-portfolio](https://portfolio.krmed.cloud/) - the portfolio site deployed here
 - [colorstack-ai-resume-review-discord-bot](https://github.com/KRMed/colorstack-ai-resume-review-discord-bot) - the AI resume bot running in the `bots` namespace
