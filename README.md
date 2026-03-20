@@ -24,6 +24,7 @@ Real workloads, real users, zero cloud dependency. A self-hosted K3S cluster on 
 | Grafana | `grafana.krmed.cloud` | Protected | Live cluster, deployment, and traffic dashboards |
 | Prometheus | `prometheus.krmed.cloud` | Protected | Metrics collection and storage |
 | ColorStack AI Resume Bot | Discord | Outbound only | AI resume review bot serving the ColorStack community |
+| Alertmanager | Internal | Protected | Routes firing Prometheus alerts to ntfy for push notifications |
 
 ---
 
@@ -79,7 +80,8 @@ Both must pass. No exceptions.
 | GitOps | ArgoCD with auto-sync, self-heal, and pruning |
 | Config | Kustomize + Helm |
 | Ingress | ingress-nginx |
-| Monitoring | kube-prometheus-stack (Prometheus + Grafana + AlertManager) |
+| Monitoring | kube-prometheus-stack (Prometheus + Grafana + Alertmanager) |
+| Alerting | Alertmanager → ntfy (self-hosted push notifications) |
 | Tunneling | Cloudflare Tunnel |
 | Registry | GitHub Container Registry (ghcr.io) |
 | Security scanning | Trivy + gitleaks |
