@@ -2,7 +2,7 @@
 
 > **Status: Planned**
 
-Centralized access control layer for internal services. Rather than exposing services publicly or managing access per-app, this will act as a single gate — I decide who gets in, and everything else stays private by default.
+Centralized access control layer for internal services. Rather than exposing services publicly or managing access per-app, this will act as a single gate, I decide who gets in, and everything else stays private by default.
 
 ## What it will do
 
@@ -12,4 +12,4 @@ Centralized access control layer for internal services. Rather than exposing ser
 
 ## Why
 
-Right now internal services are protected by Cloudflare Access, which works but ties access control to Cloudflare's dashboard. This will bring that logic into the cluster and make it manageable as code alongside everything else.
+Internal services are protected by Cloudflare Access, which handles the network layer well. This builds on top of that, adding an auth layer inside the cluster so access control is manageable as code alongside everything else, rather than configured separately outside it.
