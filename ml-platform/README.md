@@ -2,7 +2,7 @@
 
 > **Status: Planned**
 
-A self-hosted ML fine-tuning pipeline running on the cluster. The goal is a managed environment for submitting fine-tuning jobs against base models — think what cloud providers offer, but running on my own hardware with no per-hour billing.
+A self-hosted ML fine-tuning pipeline running on the cluster. The goal is a managed environment for submitting fine-tuning jobs against base models think what cloud providers offer, but running on my own hardware with no per-hour billing.
 
 ## What it will do
 
