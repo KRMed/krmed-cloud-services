@@ -28,7 +28,7 @@ Real workloads, real users, zero cloud dependency. A self-hosted K3S cluster on 
 | ArgoCD | `argocd.krmed.cloud` | Protected | GitOps control plane |
 | Grafana | `grafana.krmed.cloud` | Protected | Live cluster, deployment, and traffic dashboards |
 | Prometheus | `prometheus.krmed.cloud` | Protected | Metrics collection and storage |
-| ColorStack AI Resume Bot | Discord | Outbound only | AI resume review bot serving the ColorStack community |
+| ColorStack AI Resume Bot | Discord | Outbound only | AI resume review bot serving 900+ ColorStack members |
 | Alertmanager | Internal | Protected | Routes firing Prometheus alerts to ntfy for push notifications |
 
 ---
