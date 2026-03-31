@@ -15,6 +15,11 @@ Real workloads, real users, zero cloud dependency. A self-hosted K3S cluster on 
 
 ---
 
+> **Want to build your own Cloud?**
+> Everything in this repo, the cluster, the GitOps pipeline, the monitoring stack, the zero-port tunneling, is something you can replicate on your own hardware, from a single Raspberry Pi to a multi-node setup. The **[Build Your Own Cloud](https://github.com/KRMed/build-your-own-cloud)** guide walks through all of it from bare metal up, with explanations for every decision along the way. **No prior experience required**, if you can use a terminal, you can follow along
+
+---
+
 ## What's Running
 
 | App | Domain | Access | What it does |
