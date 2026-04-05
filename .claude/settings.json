@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.k3s.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:argo-cd.readthedocs.io)"
+    ]
+  }
+}
