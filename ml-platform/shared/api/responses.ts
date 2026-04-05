@@ -1,8 +1,9 @@
 import type { Job } from '../schema/job';
+import type { APIError } from './errors';
 
 export interface JobResponse {
   data: Job | null;
-  error: string | null;
+  error: APIError | null;
 }
 
 export interface ListJobsResponse {
@@ -10,5 +11,5 @@ export interface ListJobsResponse {
   total: number;
   limit: number;
   offset: number;
-  error: string | null;
+  error: APIError | null;
 }

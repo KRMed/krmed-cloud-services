@@ -10,6 +10,6 @@ type CreateJobRequest struct {
 
 type ListJobsParams struct {
 	Status *schema.JobStatus `json:"status,omitempty"`
-	Limit  int               `json:"limit,omitempty"`
-	Offset int               `json:"offset,omitempty"`
+	Limit  *int              `json:"limit,omitempty"`
+	Offset *int              `json:"offset,omitempty"`
 }

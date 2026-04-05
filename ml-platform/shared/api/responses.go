@@ -4,7 +4,7 @@ import "github.com/KRMed/krmed-cloud-services/ml-platform/shared/schema"
 
 type JobResponse struct {
 	Data  *schema.Job `json:"data"`
-	Error *string     `json:"error"`
+	Error *APIError   `json:"error"`
 }
 
 type ListJobsResponse struct {
@@ -12,5 +12,5 @@ type ListJobsResponse struct {
 	Total  int          `json:"total"`
 	Limit  int          `json:"limit"`
 	Offset int          `json:"offset"`
-	Error  *string      `json:"error"`
+	Error  *APIError    `json:"error"`
 }
