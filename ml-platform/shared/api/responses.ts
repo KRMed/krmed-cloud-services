@@ -6,10 +6,16 @@ export interface JobResponse {
   error: APIError | null;
 }
 
-export interface ListJobsResponse {
+export interface ListJobsSuccessResponse {
   data: Job[];
   total: number;
   limit: number;
   offset: number;
-  error: APIError | null;
+  error: null;
 }
+
+export interface ListJobsErrorResponse {
+  error: APIError;
+}
+
+export type ListJobsResponse = ListJobsSuccessResponse | ListJobsErrorResponse;
