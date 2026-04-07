@@ -18,6 +18,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import boto3
 import psycopg2
@@ -55,12 +56,25 @@ def is_hf_repo_id(source: str) -> bool:
     return "/" in source
 
 
+def _hash_file_into(h: "hashlib._Hash", path: Path) -> None:
+    """Stream a file into an existing hash object in fixed-size chunks."""
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(chunk)
+
+
 def compute_directory_checksum(directory: Path) -> str:
-    """SHA256 of all file contents concatenated in sorted relative-path order."""
+    """SHA256 of each file's relative path and contents, in sorted path order.
+
+    Both path and contents are included so that two directories with identical
+    file contents but different layouts produce different checksums. Files are
+    streamed in chunks to avoid loading multi-GB weight files into memory.
+    """
     h = hashlib.sha256()
     for file in sorted(directory.rglob("*")):
         if file.is_file():
-            h.update(file.read_bytes())
+            h.update(file.relative_to(directory).as_posix().encode())
+            _hash_file_into(h, file)
     return h.hexdigest()
 
 
@@ -97,32 +111,67 @@ def verify_upload(s3, bucket: str, prefix: str, expected_keys: list[str]) -> Non
         raise RuntimeError(f"Upload verification failed — missing keys: {missing}")
 
 
-def register_model(
+def reserve_model_row(
     db_url: str,
     name: str,
     version: str,
     storage_path: str,
     size_bytes: int,
     sha256_checksum: str,
-    source_url: str | None,
-    set_default: bool,
+    source_url: Optional[str],
 ) -> int:
+    """Insert a 'pending' row before upload begins.
+
+    If a 'ready' row already exists for (name, version), raises ValueError.
+    If a 'pending' row exists (leftover from a failed previous attempt), removes
+    it so this attempt can start clean.
+
+    Returns the new model ID.
+    """
     conn = psycopg2.connect(db_url)
     try:
         with conn:
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT id, status FROM models WHERE name = %s AND version = %s",
+                    (name, version),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    existing_id, existing_status = existing
+                    if existing_status == "ready":
+                        raise ValueError(
+                            f"Model {name}@{version} is already registered (id={existing_id}). "
+                            "Use a different version string or archive the existing entry first."
+                        )
+                    # pending row from a failed previous run — clean it up
+                    cur.execute("DELETE FROM models WHERE id = %s", (existing_id,))
+
+                cur.execute(
                     """
                     INSERT INTO models
                         (name, version, storage_path, path_type, size_bytes,
                          sha256_checksum, status, is_default, source_url)
-                    VALUES (%s, %s, %s, 'prefix', %s, %s, 'ready', false, %s)
+                    VALUES (%s, %s, %s, 'prefix', %s, %s, 'pending', false, %s)
                     RETURNING id
                     """,
                     (name, version, storage_path, size_bytes, sha256_checksum, source_url),
                 )
-                model_id = cur.fetchone()[0]
+                return cur.fetchone()[0]
+    finally:
+        conn.close()
 
+
+def activate_model_row(db_url: str, model_id: int, name: str, set_default: bool) -> None:
+    """Mark the row 'ready' and optionally set it as the default for its name."""
+    conn = psycopg2.connect(db_url)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE models SET status = 'ready' WHERE id = %s",
+                    (model_id,),
+                )
                 if set_default:
                     cur.execute(
                         "UPDATE models SET is_default = false WHERE name = %s AND id != %s",
@@ -132,7 +181,17 @@ def register_model(
                         "UPDATE models SET is_default = true WHERE id = %s",
                         (model_id,),
                     )
-        return model_id
+    finally:
+        conn.close()
+
+
+def delete_model_row(db_url: str, model_id: int) -> None:
+    """Compensating action: remove a pending row after a failed upload."""
+    conn = psycopg2.connect(db_url)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM models WHERE id = %s AND status = 'pending'", (model_id,))
     finally:
         conn.close()
 
@@ -158,7 +217,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         if is_hf_repo_id(args.source):
-            print(f"Downloading {args.source} @ {args.version} from HuggingFace Hub...")
+            print(f"Downloading {args.source} @ {args.version} from HuggingFace Hub...", file=sys.stderr)
             model_dir = Path(snapshot_download(
                 repo_id=args.source,
                 revision=args.version,
@@ -172,18 +231,12 @@ def main() -> None:
                 sys.exit(1)
             source_url = None
 
-        print("Computing checksum...")
+        print("Computing checksum...", file=sys.stderr)
         checksum = compute_directory_checksum(model_dir)
         size = total_directory_size(model_dir)
 
-        print(f"Uploading to {bucket}/{prefix}...")
-        uploaded_keys = upload_directory(s3, bucket, model_dir, prefix)
-
-        print("Verifying upload...")
-        verify_upload(s3, bucket, prefix, uploaded_keys)
-
-        print("Registering in database...")
-        model_id = register_model(
+        print("Reserving registry row...", file=sys.stderr)
+        model_id = reserve_model_row(
             db_url=env["DATABASE_URL"],
             name=args.name,
             version=args.version,
@@ -191,8 +244,21 @@ def main() -> None:
             size_bytes=size,
             sha256_checksum=checksum,
             source_url=source_url,
-            set_default=args.set_default,
         )
+
+        try:
+            print(f"Uploading to {bucket}/{prefix}...", file=sys.stderr)
+            uploaded_keys = upload_directory(s3, bucket, model_dir, prefix)
+
+            print("Verifying upload...", file=sys.stderr)
+            verify_upload(s3, bucket, prefix, uploaded_keys)
+        except Exception:
+            print("Upload failed — removing reserved row...", file=sys.stderr)
+            delete_model_row(env["DATABASE_URL"], model_id)
+            raise
+
+        print("Activating registry row...", file=sys.stderr)
+        activate_model_row(env["DATABASE_URL"], model_id, args.name, args.set_default)
 
     print(
         f"\nDone.\n"
@@ -202,7 +268,8 @@ def main() -> None:
         f"  size:      {size / 1024 / 1024:.1f} MB\n"
         f"  checksum:  {checksum}\n"
         f"  prefix:    {bucket}/{prefix}\n"
-        f"  default:   {args.set_default}"
+        f"  default:   {args.set_default}",
+        file=sys.stderr,
     )
 
 

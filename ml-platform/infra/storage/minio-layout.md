@@ -7,13 +7,15 @@ Single bucket: `crucible`
 ```
 crucible/
 ├── models/
-│   └── {hf-model-id}/          # e.g. meta-llama/Llama-3.2-1B
-│       └── {revision}/         # git commit SHA from HF Hub
+│   └── {name}/                 # e.g. mistral-7b-instruct
+│       └── {version}/          # HF commit SHA or arbitrary version string
 │           └── ...             # model weights and config files
 │
 ├── datasets/
-│   └── {job-id}/
-│       └── {filename}          # original upload (CSV, JSON, or Parquet)
+│   └── {name}/
+│       └── {sha256}/           # multi-file dataset: prefix with trailing slash
+│           └── ...
+│       └── {sha256}.{ext}      # single-file dataset: object key (csv, json, parquet)
 │
 └── checkpoints/
     └── {job-id}/
@@ -23,10 +25,9 @@ crucible/
 ## Notes
 
 - One bucket keeps access key policy simple - a single service credential covers all reads and writes.
-- Model cache is keyed by `{hf-model-id}/{revision}` so a re-run of the same model+revision hits
-  the cache without re-downloading. Revision is the HF Hub commit SHA, not a tag, to avoid
-  ambiguity (tags can be moved).
-- Dataset path stored in Postgres as `datasets/{job-id}/{filename}` (relative to bucket root).
+- Model prefix: `models/{name}/{version}/` — version is HF Hub commit SHA for HF models.
+- Dataset version is the SHA256 of content, making paths content-addressed and stable across re-uploads.
 - Checkpoint path stored in Postgres as `checkpoints/{job-id}/` (prefix, not a single file —
   LoRA adapters are a directory of files).
 - Worker writes checkpoints, backend reads paths. Neither service writes to the other's prefix.
+- See `garage-conventions.md` for multipart upload settings and environment variable reference.

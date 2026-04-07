@@ -19,6 +19,7 @@ import hashlib
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import boto3
 import psycopg2
@@ -45,20 +46,31 @@ def check_env() -> dict:
     return {k: os.environ[k] for k in REQUIRED_ENV}
 
 
-def checksum_file(path: Path) -> str:
-    h = hashlib.sha256()
+def _hash_file_into(h: "hashlib._Hash", path: Path) -> None:
+    """Stream a file into an existing hash object in fixed-size chunks."""
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
             h.update(chunk)
+
+
+def checksum_file(path: Path) -> str:
+    h = hashlib.sha256()
+    _hash_file_into(h, path)
     return h.hexdigest()
 
 
 def checksum_directory(directory: Path) -> str:
-    """SHA256 of all file contents concatenated in sorted relative-path order."""
+    """SHA256 of each file's relative path and contents, in sorted path order.
+
+    Both path and contents are included so that two directories with identical
+    file contents but different layouts produce different checksums. Files are
+    streamed in chunks to avoid loading large files into memory.
+    """
     h = hashlib.sha256()
     for file in sorted(directory.rglob("*")):
         if file.is_file():
-            h.update(file.read_bytes())
+            h.update(file.relative_to(directory).as_posix().encode())
+            _hash_file_into(h, file)
     return h.hexdigest()
 
 
@@ -116,7 +128,7 @@ def upload_dataset(s3, bucket: str, local_path: Path, name: str, version: str) -
     return prefix, "prefix"
 
 
-def register_dataset(
+def reserve_dataset_row(
     db_url: str,
     name: str,
     version: str,
@@ -124,23 +136,71 @@ def register_dataset(
     path_type: str,
     size_bytes: int,
     sha256_checksum: str,
-    source_description: str | None,
-) -> int:
+    source_description: Optional[str],
+) -> tuple[int, bool]:
+    """Insert a 'pending' row before upload begins.
+
+    Because version = content checksum, a collision on (name, version) means
+    the exact same content is already registered under this name:
+    - If 'ready': return the existing ID and signal no upload is needed.
+    - If 'pending': remove the stale row and reserve a fresh one.
+
+    Returns (dataset_id, already_registered).
+    """
     conn = psycopg2.connect(db_url)
     try:
         with conn:
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT id, status FROM datasets WHERE name = %s AND version = %s",
+                    (name, version),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    existing_id, existing_status = existing
+                    if existing_status == "ready":
+                        return existing_id, True
+                    # pending row from a failed previous run — clean it up
+                    cur.execute("DELETE FROM datasets WHERE id = %s", (existing_id,))
+
+                cur.execute(
                     """
                     INSERT INTO datasets
                         (name, version, storage_path, path_type, size_bytes,
                          sha256_checksum, status, source_description)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'ready', %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)
                     RETURNING id
                     """,
                     (name, version, storage_path, path_type, size_bytes, sha256_checksum, source_description),
                 )
-                return cur.fetchone()[0]
+                return cur.fetchone()[0], False
+    finally:
+        conn.close()
+
+
+def activate_dataset_row(db_url: str, dataset_id: int) -> None:
+    conn = psycopg2.connect(db_url)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE datasets SET status = 'ready' WHERE id = %s",
+                    (dataset_id,),
+                )
+    finally:
+        conn.close()
+
+
+def delete_dataset_row(db_url: str, dataset_id: int) -> None:
+    """Compensating action: remove a pending row after a failed upload."""
+    conn = psycopg2.connect(db_url)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM datasets WHERE id = %s AND status = 'pending'",
+                    (dataset_id,),
+                )
     finally:
         conn.close()
 
@@ -166,7 +226,7 @@ def main() -> None:
         aws_secret_access_key=env["GARAGE_SECRET_KEY"],
     )
 
-    print("Computing checksum (this is also the version)...")
+    print("Computing checksum (this is also the version)...", file=sys.stderr)
     if local_path.is_file():
         checksum = checksum_file(local_path)
     else:
@@ -175,11 +235,17 @@ def main() -> None:
     size = total_size(local_path)
 
     bucket = env["GARAGE_BUCKET"]
-    print(f"Uploading to {bucket}/datasets/{args.name}/{version}[/]...")
-    storage_path, path_type = upload_dataset(s3, bucket, local_path, args.name, version)
 
-    print("Registering in database...")
-    dataset_id = register_dataset(
+    # Determine storage path shape before reserving the row (needed for path_type)
+    if local_path.is_file():
+        storage_path = f"datasets/{args.name}/{version}{local_path.suffix}"
+        path_type = "object"
+    else:
+        storage_path = f"datasets/{args.name}/{version}/"
+        path_type = "prefix"
+
+    print("Reserving registry row...", file=sys.stderr)
+    dataset_id, already_registered = reserve_dataset_row(
         db_url=env["DATABASE_URL"],
         name=args.name,
         version=version,
@@ -190,7 +256,31 @@ def main() -> None:
         source_description=args.source_description,
     )
 
-    # Print dataset_id on its own line first for easy capture by workflow orchestrators
+    if already_registered:
+        print(f"Dataset {args.name}@{version[:12]} already registered — returning existing entry.", file=sys.stderr)
+        # Only the ID goes to stdout so workflow orchestrators can capture it cleanly
+        print(dataset_id)
+        print(
+            f"\nDone (idempotent).\n"
+            f"  dataset_id:  {dataset_id}\n"
+            f"  name:        {args.name}\n"
+            f"  version:     {version}",
+            file=sys.stderr,
+        )
+        return
+
+    try:
+        print(f"Uploading to {bucket}/{storage_path}...", file=sys.stderr)
+        upload_dataset(s3, bucket, local_path, args.name, version)
+    except Exception:
+        print("Upload failed — removing reserved row...", file=sys.stderr)
+        delete_dataset_row(env["DATABASE_URL"], dataset_id)
+        raise
+
+    print("Activating registry row...", file=sys.stderr)
+    activate_dataset_row(env["DATABASE_URL"], dataset_id)
+
+    # Only the ID goes to stdout so workflow orchestrators can capture it cleanly
     print(dataset_id)
     print(
         f"\nDone.\n"
@@ -199,7 +289,8 @@ def main() -> None:
         f"  version:     {version}\n"
         f"  size:        {size / 1024 / 1024:.1f} MB\n"
         f"  path_type:   {path_type}\n"
-        f"  storage:     {bucket}/{storage_path}"
+        f"  storage:     {bucket}/{storage_path}",
+        file=sys.stderr,
     )
 
 

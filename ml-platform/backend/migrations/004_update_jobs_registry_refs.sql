@@ -4,3 +4,6 @@ ALTER TABLE jobs
 
 -- base_model and dataset_path are intentionally retained until the application
 -- layer is updated to use model_id and dataset_id.
+
+CREATE INDEX idx_jobs_model_id   ON jobs (model_id);
+CREATE INDEX idx_jobs_dataset_id ON jobs (dataset_id);
