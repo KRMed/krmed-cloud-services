@@ -190,7 +190,7 @@ func (s *JobStore) List(ctx context.Context, params api.ListJobsParams) ([]schem
 	}
 	defer rows.Close()
 
-	jobs := make([]schema.Job, 0, total)
+	jobs := make([]schema.Job, 0, min(total, limit))
 	for rows.Next() {
 		r, err := scanJobRows(rows)
 		if err != nil {
@@ -210,36 +210,70 @@ func (s *JobStore) List(ctx context.Context, params api.ListJobsParams) ([]schem
 }
 
 // Update applies non-nil fields to the job and returns the updated record.
-// Status changes are validated against the allowed transition table.
+// Status changes are validated inside a transaction with SELECT FOR UPDATE so
+// the read-then-write is atomic and concurrent updates cannot bypass the
+// transition check.
 func (s *JobStore) Update(ctx context.Context, id uuid.UUID, fields UpdateJobFields) (schema.Job, error) {
-	if fields.Status != nil {
-		current, err := s.GetByID(ctx, id)
+	if fields.Status == nil {
+		r, err := scanJobRow(s.pool.QueryRow(ctx, `
+			UPDATE jobs SET
+				checkpoint_path = COALESCE($2, checkpoint_path),
+				error_message   = COALESCE($3, error_message),
+				updated_at      = NOW()
+			WHERE id = $1
+			RETURNING `+jobColumns,
+			id,
+			fields.CheckpointPath,
+			fields.ErrorMessage,
+		))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return schema.Job{}, ErrJobNotFound
+		}
 		if err != nil {
-			return schema.Job{}, err
+			return schema.Job{}, fmt.Errorf("update job: %w", err)
 		}
-		if err := validateTransition(current.Status, *fields.Status); err != nil {
-			return schema.Job{}, err
-		}
+		return r.toSchema()
 	}
 
-	r, err := scanJobRow(s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return schema.Job{}, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var currentStatus string
+	if err := tx.QueryRow(ctx,
+		`SELECT status FROM jobs WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&currentStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return schema.Job{}, ErrJobNotFound
+		}
+		return schema.Job{}, fmt.Errorf("lock job: %w", err)
+	}
+
+	if err := validateTransition(schema.JobStatus(currentStatus), *fields.Status); err != nil {
+		return schema.Job{}, err
+	}
+
+	r, err := scanJobRow(tx.QueryRow(ctx, `
 		UPDATE jobs SET
-			status          = COALESCE($2::job_status, status),
+			status          = $2::job_status,
 			checkpoint_path = COALESCE($3, checkpoint_path),
 			error_message   = COALESCE($4, error_message),
 			updated_at      = NOW()
 		WHERE id = $1
 		RETURNING `+jobColumns,
 		id,
-		statusToStringPtr(fields.Status),
+		string(*fields.Status),
 		fields.CheckpointPath,
 		fields.ErrorMessage,
 	))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return schema.Job{}, ErrJobNotFound
-	}
 	if err != nil {
 		return schema.Job{}, fmt.Errorf("update job: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return schema.Job{}, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return r.toSchema()
