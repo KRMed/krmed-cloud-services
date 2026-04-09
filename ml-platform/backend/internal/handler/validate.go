@@ -50,8 +50,8 @@ func validateCreateJob(req api.CreateJobRequest) *api.APIError {
 func validateListJobsParams(params api.ListJobsParams) *api.APIError {
 	var errs []string
 
-	if params.Limit != nil && *params.Limit < 0 {
-		errs = append(errs, "limit must be >= 0")
+	if params.Limit != nil && *params.Limit < 1 {
+		errs = append(errs, "limit must be >= 1")
 	}
 	if params.Limit != nil && *params.Limit > 200 {
 		errs = append(errs, "limit must be <= 200")

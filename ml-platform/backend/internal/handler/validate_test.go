@@ -86,7 +86,7 @@ func TestValidateListJobsParams(t *testing.T) {
 		{name: "empty params"},
 		{name: "valid status", params: api.ListJobsParams{Status: statusPtr(schema.JobStatusQueued)}},
 		{name: "valid limit", params: api.ListJobsParams{Limit: intPtr(10)}},
-		{name: "limit zero", params: api.ListJobsParams{Limit: intPtr(0)}},
+		{name: "limit zero", params: api.ListJobsParams{Limit: intPtr(0)}, wantErr: true},
 		{name: "limit at max", params: api.ListJobsParams{Limit: intPtr(200)}},
 		{name: "limit over max", params: api.ListJobsParams{Limit: intPtr(201)}, wantErr: true},
 		{name: "negative limit", params: api.ListJobsParams{Limit: intPtr(-1)}, wantErr: true},

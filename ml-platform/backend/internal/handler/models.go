@@ -4,18 +4,44 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/KRMed/krmed-cloud-services/ml-platform/backend/internal/db"
 	"github.com/KRMed/krmed-cloud-services/ml-platform/shared/api"
 )
 
+// modelResponse is the API representation of a model registry entry.
+type modelResponse struct {
+	ID        int       `json:"id"`
+	Name      string    `json:"name"`
+	Version   string    `json:"version"`
+	Status    string    `json:"status"`
+	IsDefault bool      `json:"is_default"`
+	SizeBytes int64     `json:"size_bytes"`
+	SourceURL *string   `json:"source_url"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func toModelResponse(m db.Model) modelResponse {
+	return modelResponse{
+		ID:        m.ID,
+		Name:      m.Name,
+		Version:   m.Version,
+		Status:    m.Status,
+		IsDefault: m.IsDefault,
+		SizeBytes: m.SizeBytes,
+		SourceURL: m.SourceURL,
+		CreatedAt: m.CreatedAt,
+	}
+}
+
 // listModelsResponse is the response envelope for GET /models.
 // Kept backend-internal until the frontend needs it in shared/api.
 type listModelsResponse struct {
-	Data   []db.Model `json:"data"`
-	Total  int        `json:"total"`
-	Limit  int        `json:"limit"`
-	Offset int        `json:"offset"`
+	Data   []modelResponse `json:"data"`
+	Total  int             `json:"total"`
+	Limit  int             `json:"limit"`
+	Offset int             `json:"offset"`
 }
 
 // ModelHandler handles model registry endpoints.
@@ -43,8 +69,12 @@ func (h *ModelHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data := make([]modelResponse, len(models))
+	for i, m := range models {
+		data[i] = toModelResponse(m)
+	}
 	writeJSON(w, http.StatusOK, listModelsResponse{
-		Data:   models,
+		Data:   data,
 		Total:  total,
 		Limit:  params.Limit,
 		Offset: params.Offset,
@@ -63,8 +93,8 @@ func parseListModelsParams(r *http.Request) (db.ListModelsParams, *api.APIError)
 	}
 	if s := q.Get("limit"); s != "" {
 		v, err := strconv.Atoi(s)
-		if err != nil || v < 0 || v > 200 {
-			return params, &api.APIError{Code: api.ErrInvalidRequest, Message: "limit must be an integer between 0 and 200"}
+		if err != nil || v < 1 || v > 200 {
+			return params, &api.APIError{Code: api.ErrInvalidRequest, Message: "limit must be an integer between 1 and 200"}
 		}
 		params.Limit = v
 	}

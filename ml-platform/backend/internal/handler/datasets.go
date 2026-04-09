@@ -4,18 +4,42 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/KRMed/krmed-cloud-services/ml-platform/backend/internal/db"
 	"github.com/KRMed/krmed-cloud-services/ml-platform/shared/api"
 )
 
+// datasetResponse is the API representation of a dataset registry entry.
+type datasetResponse struct {
+	ID                int       `json:"id"`
+	Name              string    `json:"name"`
+	Version           string    `json:"version"`
+	Status            string    `json:"status"`
+	SizeBytes         int64     `json:"size_bytes"`
+	SourceDescription *string   `json:"source_description"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+func toDatasetResponse(d db.Dataset) datasetResponse {
+	return datasetResponse{
+		ID:                d.ID,
+		Name:              d.Name,
+		Version:           d.Version,
+		Status:            d.Status,
+		SizeBytes:         d.SizeBytes,
+		SourceDescription: d.SourceDescription,
+		CreatedAt:         d.CreatedAt,
+	}
+}
+
 // listDatasetsResponse is the response envelope for GET /datasets.
 // Kept backend-internal until the frontend needs it in shared/api.
 type listDatasetsResponse struct {
-	Data   []db.Dataset `json:"data"`
-	Total  int          `json:"total"`
-	Limit  int          `json:"limit"`
-	Offset int          `json:"offset"`
+	Data   []datasetResponse `json:"data"`
+	Total  int               `json:"total"`
+	Limit  int               `json:"limit"`
+	Offset int               `json:"offset"`
 }
 
 // DatasetHandler handles dataset registry endpoints.
@@ -43,8 +67,12 @@ func (h *DatasetHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data := make([]datasetResponse, len(datasets))
+	for i, d := range datasets {
+		data[i] = toDatasetResponse(d)
+	}
 	writeJSON(w, http.StatusOK, listDatasetsResponse{
-		Data:   datasets,
+		Data:   data,
 		Total:  total,
 		Limit:  params.Limit,
 		Offset: params.Offset,
@@ -63,8 +91,8 @@ func parseListDatasetsParams(r *http.Request) (db.ListDatasetsParams, *api.APIEr
 	}
 	if s := q.Get("limit"); s != "" {
 		v, err := strconv.Atoi(s)
-		if err != nil || v < 0 || v > 200 {
-			return params, &api.APIError{Code: api.ErrInvalidRequest, Message: "limit must be an integer between 0 and 200"}
+		if err != nil || v < 1 || v > 200 {
+			return params, &api.APIError{Code: api.ErrInvalidRequest, Message: "limit must be an integer between 1 and 200"}
 		}
 		params.Limit = v
 	}

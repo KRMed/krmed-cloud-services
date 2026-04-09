@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -25,8 +26,15 @@ func writeError(w http.ResponseWriter, status int, code api.ErrorCode, message s
 }
 
 // readJSON decodes the request body into v, enforcing a 1 MB size limit.
+// Returns an error if the body contains trailing content after the first JSON value.
 func readJSON(r *http.Request, v any) error {
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()
-	return dec.Decode(v)
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if err := dec.Decode(&json.RawMessage{}); !errors.Is(err, io.EOF) {
+		return errors.New("request body must contain a single JSON object")
+	}
+	return nil
 }

@@ -69,16 +69,21 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	serverErr := make(chan error, 1)
 	go func() {
 		slog.Info("server starting", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	<-ctx.Done()
-	slog.Info("shutting down")
+	select {
+	case <-ctx.Done():
+		slog.Info("shutting down")
+	case err := <-serverErr:
+		slog.Error("server error", "error", err)
+		stop()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -99,16 +104,15 @@ func withMiddleware(next http.Handler) http.Handler {
 				slog.ErrorContext(r.Context(), "panic recovered", "panic", p)
 				http.Error(rw, "internal server error", http.StatusInternalServerError)
 			}
+			slog.InfoContext(r.Context(), "request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", rw.status,
+				"duration_ms", time.Since(start).Milliseconds(),
+			)
 		}()
 
 		next.ServeHTTP(rw, r)
-
-		slog.InfoContext(r.Context(), "request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", rw.status,
-			"duration_ms", time.Since(start).Milliseconds(),
-		)
 	})
 }
 
