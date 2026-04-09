@@ -163,6 +163,13 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Remove from Redis queue so the worker never picks up a cancelled job.
+	// If the job was already consumed (BRPOP), Dequeue is a no-op; the DB
+	// cancel is still authoritative.
+	if err := h.queue.Dequeue(r.Context(), id); err != nil {
+		slog.WarnContext(r.Context(), "dequeue cancelled job", "job_id", id, "error", err)
+	}
+
 	writeJSON(w, http.StatusOK, api.JobResponse{Data: &job})
 }
 
