@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -15,14 +16,30 @@ import (
 	"github.com/KRMed/krmed-cloud-services/ml-platform/shared/schema"
 )
 
+// jobStorer is the subset of db.JobStore methods used by JobHandler.
+type jobStorer interface {
+	Create(ctx context.Context, req api.CreateJobRequest) (schema.Job, error)
+	GetByID(ctx context.Context, id uuid.UUID) (schema.Job, error)
+	List(ctx context.Context, params api.ListJobsParams) ([]schema.Job, int, error)
+	Update(ctx context.Context, id uuid.UUID, fields db.UpdateJobFields) (schema.Job, error)
+}
+
+// jobQueuer is the subset of queue.Queue methods used by JobHandler.
+type jobQueuer interface {
+	Enqueue(ctx context.Context, id uuid.UUID) error
+	GetJobStatus(ctx context.Context, id uuid.UUID) (queue.JobStatus, bool, error)
+	Dequeue(ctx context.Context, id uuid.UUID) error
+	Ping(ctx context.Context) error
+}
+
 // JobHandler handles all job-related HTTP endpoints.
 type JobHandler struct {
-	jobs  *db.JobStore
-	queue *queue.Queue
+	jobs  jobStorer
+	queue jobQueuer
 }
 
 // NewJobHandler creates a JobHandler with the given stores.
-func NewJobHandler(jobs *db.JobStore, q *queue.Queue) *JobHandler {
+func NewJobHandler(jobs jobStorer, q jobQueuer) *JobHandler {
 	return &JobHandler{jobs: jobs, queue: q}
 }
 
@@ -30,7 +47,7 @@ func NewJobHandler(jobs *db.JobStore, q *queue.Queue) *JobHandler {
 // Inserts a job record and enqueues it. If enqueue fails, marks the job failed.
 func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateJobRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, api.ErrInvalidRequest, "invalid request body: "+err.Error())
 		return
 	}
@@ -52,7 +69,9 @@ func (h *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		// Best-effort: mark the job failed so it isn't stuck in queued forever.
 		errMsg := "enqueue failed: " + err.Error()
 		status := schema.JobStatusFailed
-		_, _ = h.jobs.Update(context.Background(), job.ID, db.UpdateJobFields{
+		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = h.jobs.Update(updateCtx, job.ID, db.UpdateJobFields{
 			Status:       &status,
 			ErrorMessage: &errMsg,
 		})
@@ -136,7 +155,7 @@ func (h *JobHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req PatchJobRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, api.ErrInvalidRequest, "invalid request body: "+err.Error())
 		return
 	}

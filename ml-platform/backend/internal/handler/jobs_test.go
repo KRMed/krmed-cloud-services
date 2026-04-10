@@ -52,7 +52,8 @@ func (f *fakeQueue) Enqueue(_ context.Context, _ uuid.UUID) error { return f.enq
 func (f *fakeQueue) GetJobStatus(_ context.Context, _ uuid.UUID) (queue.JobStatus, bool, error) {
 	return f.statusJob, f.statusFound, f.statusErr
 }
-func (f *fakeQueue) Ping(_ context.Context) error { return f.pingErr }
+func (f *fakeQueue) Dequeue(_ context.Context, _ uuid.UUID) error { return nil }
+func (f *fakeQueue) Ping(_ context.Context) error                  { return f.pingErr }
 
 // jobHandlerForTest wires up a JobHandler that uses the given fakes.
 // The fakeJobStore and fakeQueue expose all methods needed by the handler.
@@ -200,7 +201,7 @@ type jobHandlerShim struct{}
 
 func (s *jobHandlerShim) createJob(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateJobRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, api.ErrInvalidRequest, "invalid request body: "+err.Error())
 		return
 	}
@@ -232,7 +233,7 @@ func (s *jobHandlerShim) updateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req PatchJobRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, api.ErrInvalidRequest, "invalid request body: "+err.Error())
 		return
 	}

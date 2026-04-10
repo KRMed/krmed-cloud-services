@@ -27,8 +27,9 @@ func writeError(w http.ResponseWriter, status int, code api.ErrorCode, message s
 
 // readJSON decodes the request body into v, enforcing a 1 MB size limit.
 // Returns an error if the body contains trailing content after the first JSON value.
-func readJSON(r *http.Request, v any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
+func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		return err

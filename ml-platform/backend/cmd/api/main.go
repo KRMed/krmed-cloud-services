@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/KRMed/krmed-cloud-services/ml-platform/backend/internal/db"
 	"github.com/KRMed/krmed-cloud-services/ml-platform/backend/internal/handler"
 	"github.com/KRMed/krmed-cloud-services/ml-platform/backend/internal/queue"
+	"github.com/KRMed/krmed-cloud-services/ml-platform/shared/api"
 )
 
 func main() {
@@ -102,7 +104,11 @@ func withMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if p := recover(); p != nil {
 				slog.ErrorContext(r.Context(), "panic recovered", "panic", p)
-				http.Error(rw, "internal server error", http.StatusInternalServerError)
+				rw.Header().Set("Content-Type", "application/json")
+				rw.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(rw).Encode(map[string]any{
+					"error": api.APIError{Code: api.ErrInternalServer, Message: "internal server error"},
+				})
 			}
 			slog.InfoContext(r.Context(), "request",
 				"method", r.Method,
