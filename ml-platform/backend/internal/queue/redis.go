@@ -75,6 +75,17 @@ func (q *Queue) GetJobStatus(ctx context.Context, jobID uuid.UUID) (JobStatus, b
 	return js, true, nil
 }
 
+// Dequeue removes a job ID from the job queue. This is called when cancelling a
+// queued job so the worker never picks it up. If the job has already been consumed
+// by a worker (BRPOP), LREM returns 0 — this is not an error; the DB cancel is
+// still authoritative and the worker must respect it before executing.
+func (q *Queue) Dequeue(ctx context.Context, jobID uuid.UUID) error {
+	if _, err := q.client.LRem(ctx, jobQueueKey, 0, jobID.String()).Result(); err != nil {
+		return fmt.Errorf("dequeue job %s: %w", jobID, err)
+	}
+	return nil
+}
+
 // Ping checks that Redis is reachable.
 func (q *Queue) Ping(ctx context.Context) error {
 	if err := q.client.Ping(ctx).Err(); err != nil {

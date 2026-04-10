@@ -9,6 +9,7 @@ const (
 	ErrModelNotFound        ErrorCode = "MODEL_NOT_FOUND"
 	ErrQueueFull            ErrorCode = "QUEUE_FULL"
 	ErrInternalServer       ErrorCode = "INTERNAL_SERVER_ERROR"
+	ErrUnauthorized         ErrorCode = "UNAUTHORIZED"
 )
 
 type APIError struct {
