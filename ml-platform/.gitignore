@@ -1,2 +1,9 @@
 .claude
 .claudeignore
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+scripts/__pycache__/
