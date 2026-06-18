@@ -11,11 +11,6 @@ that covers all reads and writes.
 
 ```
 crucible/
-├── models/
-│   └── {name}/
-│       └── {version}/          # always a prefix, trailing slash implied
-│           └── ...             # model weights, config, tokenizer files
-│
 ├── datasets/
 │   └── {name}/
 │       └── {version}/          # multi-file dataset: prefix with trailing slash
@@ -27,12 +22,13 @@ crucible/
         └── ...
 ```
 
+Base-model weights are NOT stored in Garage. The worker downloads them from the
+Hugging Face Hub and caches them on the GPU box local HDD; the `models` table is
+an allow-list of HF repos, not a Garage prefix.
+
 ## Key conventions
 
-- `{name}` for models matches the `name` column in the `models` table (e.g. `mistral-7b-instruct`)
-- `{version}` for HuggingFace models is the commit SHA from HF Hub, not a tag
 - `{version}` for datasets is the SHA256 of the dataset content
-- Model paths are always prefixes (`path_type = 'prefix'`)
 - Dataset paths are a prefix for directories, an object key for single files (`path_type` varies)
 - Checkpoint paths are always prefixes keyed by job UUID
 

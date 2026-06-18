@@ -9,28 +9,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Model mirrors the columns of the models table returned to the API layer.
+// Model mirrors the columns of the models allow-list table returned to the API
+// layer. Base-model weights are not stored by Crucible; this is metadata about
+// which Hugging Face repos and revisions users may fine-tune.
 type Model struct {
-	ID             int
-	Name           string
-	Version        string
-	StoragePath    string
-	PathType       string
-	SizeBytes      int64
-	Sha256Checksum string
-	Status         string
-	IsDefault      bool
-	SourceURL      *string
-	ArchivedAt     *time.Time
-	CreatedAt      time.Time
+	ID          int
+	HFRepoID    string
+	Revision    string
+	DisplayName string
+	ParamCount  *int64
+	VramHint    *string
+	Status      string
+	IsDefault   bool
+	ArchivedAt  *time.Time
+	CreatedAt   time.Time
 }
 
 // ListModelsParams controls filtering and pagination for model queries.
 type ListModelsParams struct {
 	// Status filters by registry status. Defaults to "ready" when nil.
 	Status *string
-	// Name filters by case-insensitive substring match when non-empty.
-	Name   string
+	// Search filters by case-insensitive substring match against the HF repo ID and display name when non-empty.
+	Search string
 	Limit  int
 	Offset int
 }
@@ -45,14 +45,14 @@ func NewModelStore(pool *pgxpool.Pool) *ModelStore {
 	return &ModelStore{pool: pool}
 }
 
-const modelColumns = `id, name, version, storage_path, path_type, size_bytes,
-                      sha256_checksum, status, is_default, source_url, archived_at, created_at`
+const modelColumns = `id, hf_repo_id, revision, display_name, param_count,
+                      vram_hint, status, is_default, archived_at, created_at`
 
 func scanModel(rows pgx.Rows) (Model, error) {
 	m := Model{}
 	err := rows.Scan(
-		&m.ID, &m.Name, &m.Version, &m.StoragePath, &m.PathType, &m.SizeBytes,
-		&m.Sha256Checksum, &m.Status, &m.IsDefault, &m.SourceURL, &m.ArchivedAt, &m.CreatedAt,
+		&m.ID, &m.HFRepoID, &m.Revision, &m.DisplayName, &m.ParamCount,
+		&m.VramHint, &m.Status, &m.IsDefault, &m.ArchivedAt, &m.CreatedAt,
 	)
 	return m, err
 }
@@ -75,21 +75,22 @@ func (s *ModelStore) List(ctx context.Context, params ListModelsParams) ([]Model
 		err   error
 	)
 
-	if params.Name != "" {
-		namePattern := "%" + params.Name + "%"
+	if params.Search != "" {
+		searchPattern := "%" + params.Search + "%"
 		if err = s.pool.QueryRow(ctx,
-			`SELECT COUNT(*) FROM models WHERE status = $1 AND name ILIKE $2`,
-			status, namePattern,
+			`SELECT COUNT(*) FROM models
+			 WHERE status = $1 AND (hf_repo_id ILIKE $2 OR display_name ILIKE $2)`,
+			status, searchPattern,
 		).Scan(&total); err != nil {
 			return nil, 0, fmt.Errorf("count models: %w", err)
 		}
 		rows, err = s.pool.Query(ctx, `
 			SELECT `+modelColumns+`
 			FROM models
-			WHERE status = $1 AND name ILIKE $2
-			ORDER BY name, version
+			WHERE status = $1 AND (hf_repo_id ILIKE $2 OR display_name ILIKE $2)
+			ORDER BY display_name, revision
 			LIMIT $3 OFFSET $4
-		`, status, namePattern, limit, params.Offset)
+		`, status, searchPattern, limit, params.Offset)
 	} else {
 		if err = s.pool.QueryRow(ctx,
 			`SELECT COUNT(*) FROM models WHERE status = $1`, status,
@@ -100,7 +101,7 @@ func (s *ModelStore) List(ctx context.Context, params ListModelsParams) ([]Model
 			SELECT `+modelColumns+`
 			FROM models
 			WHERE status = $1
-			ORDER BY name, version
+			ORDER BY display_name, revision
 			LIMIT $2 OFFSET $3
 		`, status, limit, params.Offset)
 	}
