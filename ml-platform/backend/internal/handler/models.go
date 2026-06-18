@@ -10,28 +10,30 @@ import (
 	"github.com/KRMed/krmed-cloud-services/ml-platform/shared/api"
 )
 
-// modelResponse is the API representation of a model registry entry.
+// modelResponse is the API representation of a base-model allow-list entry.
 type modelResponse struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	Version   string    `json:"version"`
-	Status    string    `json:"status"`
-	IsDefault bool      `json:"is_default"`
-	SizeBytes int64     `json:"size_bytes"`
-	SourceURL *string   `json:"source_url"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int       `json:"id"`
+	HFRepoID    string    `json:"hf_repo_id"`
+	Revision    string    `json:"revision"`
+	DisplayName string    `json:"display_name"`
+	ParamCount  *int64    `json:"param_count"`
+	VramHint    *string   `json:"vram_hint"`
+	Status      string    `json:"status"`
+	IsDefault   bool      `json:"is_default"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func toModelResponse(m db.Model) modelResponse {
 	return modelResponse{
-		ID:        m.ID,
-		Name:      m.Name,
-		Version:   m.Version,
-		Status:    m.Status,
-		IsDefault: m.IsDefault,
-		SizeBytes: m.SizeBytes,
-		SourceURL: m.SourceURL,
-		CreatedAt: m.CreatedAt,
+		ID:          m.ID,
+		HFRepoID:    m.HFRepoID,
+		Revision:    m.Revision,
+		DisplayName: m.DisplayName,
+		ParamCount:  m.ParamCount,
+		VramHint:    m.VramHint,
+		Status:      m.Status,
+		IsDefault:   m.IsDefault,
+		CreatedAt:   m.CreatedAt,
 	}
 }
 
@@ -88,8 +90,8 @@ func parseListModelsParams(r *http.Request) (db.ListModelsParams, *api.APIError)
 	if s := q.Get("status"); s != "" {
 		params.Status = &s
 	}
-	if s := q.Get("name"); s != "" {
-		params.Name = s
+	if s := q.Get("search"); s != "" {
+		params.Search = s
 	}
 	if s := q.Get("limit"); s != "" {
 		v, err := strconv.Atoi(s)
