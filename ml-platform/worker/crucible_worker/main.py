@@ -13,8 +13,10 @@ import time
 import redis
 
 from crucible_worker import config
+from crucible_worker.checkpoint_store import GarageCheckpointStore
 from crucible_worker.db import PostgresJobRepository
-from crucible_worker.executor import StubExecutor
+from crucible_worker.executor import CachingExecutor, StubTrainer
+from crucible_worker.model_cache import HFModelCache
 from crucible_worker.processor import JobProcessor
 from crucible_worker.reconciler import Reconciler
 from crucible_worker.redis_queue import RedisQueue
@@ -38,7 +40,10 @@ def run(cfg: config.Config, stop: threading.Event) -> None:
     repo = PostgresJobRepository(cfg.database_url)
     queue = RedisQueue(client, cfg.queue_block_seconds)
     status = StatusPublisher(client)
-    executor = StubExecutor()
+    cache = HFModelCache(cfg.model_cache_dir)
+    store = GarageCheckpointStore.from_config(cfg)
+    # StubTrainer is the Phase 5C drop-in point; cache + upload run for real.
+    executor = CachingExecutor(cache, StubTrainer(), store)
 
     processor = JobProcessor(repo, queue, status, executor)
     reconciler = Reconciler(

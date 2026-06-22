@@ -1,6 +1,7 @@
-# Phase 5A worker core (GPU-independent) runtime dependencies.
-# Phase 5B adds boto3 (Garage) and huggingface_hub (model cache).
+# Phase 5A/5B worker core (GPU-independent) runtime dependencies.
 # Phase 5C adds the pinned Blackwell stack (CUDA / torch / bitsandbytes /
 # Unsloth) once validated by a smoke test on the real RTX 5060 Ti.
 psycopg2-binary~=2.9
 redis~=5.2
+boto3~=1.43
+huggingface_hub~=1.20
