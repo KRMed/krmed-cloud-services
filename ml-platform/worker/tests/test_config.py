@@ -1,6 +1,7 @@
 import pytest
 
 from crucible_worker.config import (
+    DEFAULT_GPU_IDS,
     DEFAULT_MODEL_CACHE_DIR,
     DEFAULT_ORPHAN_GRACE_SECONDS,
     DEFAULT_QUEUE_BLOCK_SECONDS,
@@ -23,6 +24,7 @@ ALL_ENV_KEYS = [
     "VISIBILITY_TIMEOUT_SECONDS",
     "RECONCILE_INTERVAL_SECONDS",
     "ORPHAN_GRACE_SECONDS",
+    "CRUCIBLE_GPUS",
 ]
 
 
@@ -50,6 +52,7 @@ def test_load_with_required_vars_applies_defaults(clean_env):
     assert config.visibility_timeout_seconds == DEFAULT_VISIBILITY_TIMEOUT_SECONDS
     assert config.reconcile_interval_seconds == DEFAULT_RECONCILE_INTERVAL_SECONDS
     assert config.orphan_grace_seconds == DEFAULT_ORPHAN_GRACE_SECONDS
+    assert config.gpu_ids == DEFAULT_GPU_IDS
 
 
 def test_missing_required_vars_raises_listing_all(clean_env):
@@ -109,6 +112,24 @@ def test_non_integer_int_env_raises(clean_env):
     with pytest.raises(ConfigError) as exc:
         load()
     assert "RECONCILE_INTERVAL_SECONDS" in str(exc.value)
+
+
+def test_crucible_gpus_parsed_into_tuple(clean_env):
+    _set_required(clean_env)
+    clean_env.setenv("CRUCIBLE_GPUS", "0,1")
+
+    config = load()
+
+    assert config.gpu_ids == ("0", "1")
+
+
+def test_crucible_gpus_blank_falls_back_to_default(clean_env):
+    _set_required(clean_env)
+    clean_env.setenv("CRUCIBLE_GPUS", "  ")
+
+    config = load()
+
+    assert config.gpu_ids == DEFAULT_GPU_IDS
 
 
 def test_config_is_frozen(clean_env):

@@ -12,18 +12,14 @@ from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
-import boto3
 from boto3.exceptions import Boto3Error
 from boto3.s3.transfer import TransferConfig
-from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
 
 from crucible_worker import config
+from crucible_worker.garage import build_client
 
 logger = logging.getLogger("crucible.worker.checkpoint_store")
-
-# Garage ignores the region, but botocore requires one to be set.
-_GARAGE_REGION = "garage"
 
 # Multipart thresholds from garage-conventions.md.
 _MULTIPART_THRESHOLD = 8 * 1024 * 1024
@@ -40,17 +36,6 @@ class CheckpointStore(Protocol):
         ...
 
 
-def _build_client(cfg: config.Config):
-    return boto3.client(
-        "s3",
-        endpoint_url=cfg.garage_endpoint,
-        aws_access_key_id=cfg.garage_access_key,
-        aws_secret_access_key=cfg.garage_secret_key,
-        region_name=_GARAGE_REGION,
-        config=BotoConfig(s3={"addressing_style": "path"}),
-    )
-
-
 class GarageCheckpointStore:
     """Uploads a local adapter directory to the Garage checkpoints prefix."""
 
@@ -64,7 +49,7 @@ class GarageCheckpointStore:
 
     @classmethod
     def from_config(cls, cfg: config.Config) -> "GarageCheckpointStore":
-        return cls(_build_client(cfg), cfg.garage_bucket)
+        return cls(build_client(cfg), cfg.garage_bucket)
 
     def upload(self, job_id: UUID, local_dir: Path) -> str:
         prefix = f"checkpoints/{job_id}/"

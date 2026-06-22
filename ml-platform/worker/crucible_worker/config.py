@@ -25,6 +25,9 @@ DEFAULT_QUEUE_BLOCK_SECONDS = 5
 DEFAULT_VISIBILITY_TIMEOUT_SECONDS = 15 * 60
 DEFAULT_RECONCILE_INTERVAL_SECONDS = 5 * 60
 DEFAULT_ORPHAN_GRACE_SECONDS = 60
+# One worker process per GPU id, each pinned via CUDA_VISIBLE_DEVICES. Default is
+# the single RTX 5060 Ti; set CRUCIBLE_GPUS=0,1 to drive the planned dual card.
+DEFAULT_GPU_IDS = ("0",)
 
 
 class ConfigError(RuntimeError):
@@ -53,6 +56,19 @@ class Config:
     # LPUSH lands. The reconciler ignores queued jobs younger than this so it
     # does not race that window and double-enqueue.
     orphan_grace_seconds: int
+    # GPU ids to run a worker process on, one job per GPU. A trailing default
+    # keeps every existing keyword construction (including tests) valid.
+    gpu_ids: tuple[str, ...] = DEFAULT_GPU_IDS
+
+
+def _gpu_ids_env(key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.environ.get(key)
+    if raw is None or raw.strip() == "":
+        return default
+    ids = tuple(part.strip() for part in raw.split(",") if part.strip())
+    if not ids:
+        raise ConfigError(f"{key} is set but lists no GPU ids, got {raw!r}")
+    return ids
 
 
 def _int_env(key: str, default: int) -> int:
@@ -90,4 +106,5 @@ def load() -> Config:
         orphan_grace_seconds=_int_env(
             "ORPHAN_GRACE_SECONDS", DEFAULT_ORPHAN_GRACE_SECONDS
         ),
+        gpu_ids=_gpu_ids_env("CRUCIBLE_GPUS", DEFAULT_GPU_IDS),
     )

@@ -15,6 +15,17 @@ class FakeCache:
         return self._path
 
 
+class FakeDatasetStore:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def download(self, dataset_path: str, local_dir: Path) -> Path:
+        self.calls.append((dataset_path, local_dir))
+        target = local_dir / "data.csv"
+        target.write_text("text\nhello\n")
+        return target
+
+
 class FakeStore:
     def __init__(self) -> None:
         self.job_id = None
@@ -32,42 +43,51 @@ class RecordingTrainer:
     def __init__(self) -> None:
         self.seen = None
 
-    def train(self, job, model_path, output_dir, heartbeat):
-        self.seen = (job.id, model_path, output_dir.exists())
+    def train(self, job, model_path, dataset_path, output_dir, heartbeat):
+        self.seen = (job.id, model_path, dataset_path, output_dir.exists())
         (output_dir / "adapter_config.json").write_text("{}")
 
 
-def test_caching_executor_caches_trains_then_uploads(tmp_path):
+def test_caching_executor_caches_downloads_trains_then_uploads(tmp_path):
     job = make_job()
     model = comfortable_model(job.base_model)
     model_path = tmp_path / "model"
     model_path.mkdir()
     cache = FakeCache(model_path)
+    dataset_store = FakeDatasetStore()
     store = FakeStore()
     beats = []
 
-    result = CachingExecutor(cache, StubTrainer(), store).run(
+    result = CachingExecutor(cache, dataset_store, StubTrainer(), store).run(
         job, model, lambda: beats.append(1)
     )
 
     assert cache.calls == [model]
+    assert dataset_store.calls[0][0] == job.dataset_path
     assert result.checkpoint_path == checkpoint_prefix(job)
     assert store.job_id == job.id
     assert store.uploaded_names == ["STUB_ADAPTER.txt"]
     assert beats  # heartbeats fired during the run
 
 
-def test_trainer_receives_cached_model_path_and_existing_output_dir(tmp_path):
+def test_trainer_receives_cached_model_and_downloaded_dataset(tmp_path):
     job = make_job()
     model = comfortable_model(job.base_model)
     model_path = tmp_path / "model"
     model_path.mkdir()
+    dataset_store = FakeDatasetStore()
     trainer = RecordingTrainer()
     store = FakeStore()
 
-    CachingExecutor(FakeCache(model_path), trainer, store).run(
+    CachingExecutor(FakeCache(model_path), dataset_store, trainer, store).run(
         job, model, lambda: None
     )
 
-    assert trainer.seen == (job.id, model_path, True)
+    job_id, seen_model, seen_dataset, out_existed = trainer.seen
+    assert job_id == job.id
+    assert seen_model == model_path
+    assert seen_dataset.name == "data.csv"
+    assert out_existed
+    # Only the adapter the trainer wrote is uploaded; the dataset stays in its
+    # own temp dir, never under the checkpoint output.
     assert store.uploaded_names == ["adapter_config.json"]

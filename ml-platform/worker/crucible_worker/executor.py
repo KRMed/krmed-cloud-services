@@ -6,10 +6,11 @@ is the production implementation: it reads the base model from the HDD cache
 and uploads the resulting LoRA adapter to Garage. All of that is
 GPU-independent; the only GPU concern is the injected Trainer.
 
-The Trainer is the inner seam that Phase 5C fills with the real Unsloth QLoRA
-trainer. It receives a local model path and an output directory and only has to
-train; the cache and upload plumbing lives in CachingExecutor and never has to
-change. StubTrainer keeps the whole chain runnable without a GPU.
+The Trainer is the inner seam Phase 5C fills with the real Unsloth QLoRA trainer
+(trainer.py). It receives a local model path, a local dataset path, and an
+output directory, and only has to train; the cache, dataset download, and upload
+plumbing live in CachingExecutor and never have to change. StubTrainer keeps the
+whole chain runnable without a GPU.
 
 StubExecutor remains a no-op Executor used to drive the processor lifecycle in
 tests without touching HF or Garage.
@@ -24,6 +25,7 @@ from typing import Callable, Protocol
 from shared.schema.job import Job
 
 from crucible_worker.checkpoint_store import CheckpointStore
+from crucible_worker.dataset_store import DatasetStore
 from crucible_worker.model_cache import ModelCache
 from crucible_worker.repository import ModelMeta
 
@@ -40,14 +42,16 @@ class Trainer(Protocol):
         self,
         job: Job,
         model_path: Path,
+        dataset_path: Path,
         output_dir: Path,
         heartbeat: Callable[[], None],
     ) -> None:
         """Run the QLoRA fine-tune, writing the LoRA adapter into output_dir.
 
-        Phase 5C implements this against the pinned Blackwell stack. Long runs
-        must call heartbeat() periodically so the reconciler does not treat the
-        job as abandoned. Raises on failure.
+        model_path and dataset_path are local paths the executor has already
+        fetched. UnslothQLoRATrainer implements this against the pinned Blackwell
+        stack. Long runs must call heartbeat() periodically so the reconciler
+        does not treat the job as abandoned. Raises on failure.
         """
         ...
 
@@ -69,12 +73,17 @@ def checkpoint_prefix(job: Job) -> str:
 
 
 class CachingExecutor:
-    """Wraps the trainer seam with the model cache and the checkpoint uploader."""
+    """Wraps the trainer seam with the model cache, dataset download, and upload."""
 
     def __init__(
-        self, cache: ModelCache, trainer: Trainer, store: CheckpointStore
+        self,
+        cache: ModelCache,
+        dataset_store: DatasetStore,
+        trainer: Trainer,
+        store: CheckpointStore,
     ) -> None:
         self._cache = cache
+        self._dataset_store = dataset_store
         self._trainer = trainer
         self._store = store
 
@@ -84,9 +93,18 @@ class CachingExecutor:
         model_path = self._cache.ensure(model)
         heartbeat()
 
-        with tempfile.TemporaryDirectory(prefix=f"crucible-{job.id}-") as tmp:
-            output_dir = Path(tmp)
-            self._trainer.train(job, model_path, output_dir, heartbeat)
+        with tempfile.TemporaryDirectory(
+            prefix=f"crucible-data-{job.id}-"
+        ) as data_tmp, tempfile.TemporaryDirectory(
+            prefix=f"crucible-out-{job.id}-"
+        ) as out_tmp:
+            dataset_path = self._dataset_store.download(
+                job.dataset_path, Path(data_tmp)
+            )
+            heartbeat()
+
+            output_dir = Path(out_tmp)
+            self._trainer.train(job, model_path, dataset_path, output_dir, heartbeat)
             checkpoint_path = self._store.upload(job.id, output_dir)
 
         return ExecutionResult(checkpoint_path=checkpoint_path)
@@ -103,6 +121,7 @@ class StubTrainer:
         self,
         job: Job,
         model_path: Path,
+        dataset_path: Path,
         output_dir: Path,
         heartbeat: Callable[[], None],
     ) -> None:
