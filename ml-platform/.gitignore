@@ -7,3 +7,9 @@ __pycache__/
 .venv/
 venv/
 scripts/__pycache__/
+
+# Python test artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
