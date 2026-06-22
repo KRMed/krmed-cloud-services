@@ -1,0 +1,31 @@
+# Phase 5C GPU stack: QLoRA on RTX 5060 Ti (Blackwell / sm_120).
+#
+# Installed ONLY on the GPU box, never on the Pi nodes or in the unit-test
+# environment (requirements.txt covers the GPU-independent worker core). These
+# wheels are multi-GB CUDA builds.
+#
+# sm_120 (consumer Blackwell) needs the CUDA 12.8 PyTorch backend. A flat
+# `pip install -r` will NOT pick the cu128 wheel, so torch must be installed
+# first from its own index, then the rest. Install order matters.
+#
+# Step 1 - torch on the CUDA 12.8 backend (run before installing this file):
+#   pip install "torch>=2.8.0" "torchvision" "triton>=3.4.0" \
+#       --index-url https://download.pytorch.org/whl/cu128
+#
+# Step 2 - the Unsloth fine-tuning stack:
+#   pip install -r requirements-gpu.txt
+#
+# Step 3 - GATE: run scripts/qlora_smoke_test.py on the real card. Only after it
+# passes do we lock these floors to exact == pins here and in CLAUDE.md.
+#
+# Known-good Blackwell baseline (NVIDIA DGX/RTX 50-series Unsloth guidance):
+#   torch 2.8.x + cu128, triton 3.4.x, bitsandbytes 0.48.x,
+#   transformers 4.56.x, trl 0.22.x.
+
+unsloth>=2025.9.1
+unsloth_zoo>=2025.9.1
+bitsandbytes>=0.48.0
+transformers>=4.56.2
+trl>=0.22.2
+datasets>=3.0.0
+accelerate>=1.0.0
