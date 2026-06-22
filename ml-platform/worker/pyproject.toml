@@ -1,0 +1,11 @@
+[project]
+name = "crucible-worker"
+version = "0.1.0"
+description = "Crucible QLoRA fine-tuning worker"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+# "." makes crucible_worker importable; ".." makes the monorepo shared/ package
+# importable (shared.schema.job is the worker's canonical job schema mirror).
+pythonpath = [".", ".."]
+testpaths = ["tests"]
